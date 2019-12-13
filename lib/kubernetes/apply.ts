@@ -15,28 +15,29 @@
  */
 
 import { logger } from "@atomist/automation-client";
+import * as k8s from "@kubernetes/client-node";
 import { errMsg } from "../support/error";
 import { logRetry } from "../support/retry";
 import {
-    K8sObject,
     K8sObjectApi,
     K8sObjectResponse,
-    specUriPath,
 } from "./api";
 import { loadKubeConfig } from "./config";
-import { stringifyObject } from "./resource";
+import { logObject } from "./resource";
+import { specSlug } from "./spec";
 
 /**
- * Create or update a Kubernetes resource.  This implmentation uses
- * get, patch, and create, but will likely switch to [server-side
+ * Create or replace a Kubernetes resource using the provided spec.
+ * This implmentation uses read, patch, and create, but may switch to
+ * [server-side
  * apply](https://github.com/kubernetes/enhancements/issues/555) when
  * it is available.
  *
  * @param spec Kuberenetes resource spec sufficient to identify and create the resource
  * @return response from the Kubernetes API.
  */
-export async function applySpec(spec: K8sObject): Promise<K8sObjectResponse> {
-    const slug = specUriPath(spec, "read");
+export async function applySpec(spec: k8s.KubernetesObject): Promise<K8sObjectResponse> {
+    const slug = specSlug(spec);
     let client: K8sObjectApi;
     try {
         const kc = loadKubeConfig();
@@ -50,9 +51,14 @@ export async function applySpec(spec: K8sObject): Promise<K8sObjectResponse> {
         await client.read(spec);
     } catch (e) {
         logger.debug(`Failed to read resource ${slug}: ${errMsg(e)}`);
-        logger.info(`Creating resource ${slug} using '${stringifyObject(spec)}'`);
+        logger.info(`Creating resource ${slug} using '${logObject(spec)}'`);
         return logRetry(() => client.create(spec), `create resource ${slug}`);
     }
-    logger.info(`Patching resource ${slug} using '${stringifyObject(spec)}'`);
-    return logRetry(() => client.patch(spec), `patch resource ${slug}`);
+    logger.info(`Patching resource ${slug} using '${logObject(spec)}'`);
+    const options = {
+        headers: {
+            "Content-Type": "application/merge-patch+json",
+        },
+    };
+    return logRetry(() => client.patch(spec, options), `patch resource ${slug}`);
 }

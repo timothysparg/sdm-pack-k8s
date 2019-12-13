@@ -17,7 +17,6 @@
 import { logger } from "@atomist/automation-client";
 import * as k8s from "@kubernetes/client-node";
 import * as _ from "lodash";
-import { DeepPartial } from "ts-essentials";
 import {
     decrypt,
     encrypt,
@@ -26,13 +25,14 @@ import { errMsg } from "../support/error";
 import { logRetry } from "../support/retry";
 import { applicationLabels } from "./labels";
 import { metadataTemplate } from "./metadata";
+import { patchHeaders } from "./patch";
 import {
     appName,
     KubernetesApplication,
     KubernetesResourceRequest,
     KubernetesSdm,
 } from "./request";
-import { stringifyObject } from "./resource";
+import { logObject } from "./resource";
 
 /**
  * Create application secrets if they do not exist.  If a secret in
@@ -49,23 +49,24 @@ export async function upsertSecrets(req: KubernetesResourceRequest): Promise<k8s
         logger.debug(`No secrets provided, will not create secrets for ${slug}`);
         return [];
     }
-    return Promise.all(req.secrets.map(async secret => {
+    const ss: k8s.V1Secret[] = await Promise.all(req.secrets.map(async secret => {
         const secretName = `${req.ns}/${secret.metadata.name}`;
         const spec = await secretTemplate(req, secret);
         try {
             await req.clients.core.readNamespacedSecret(secret.metadata.name, spec.metadata.namespace);
         } catch (e) {
             logger.debug(`Failed to read secret ${secretName}, creating: ${errMsg(e)}`);
-            logger.info(`Creating secret ${slug} using '${stringifyObject(spec)}'`);
+            logger.info(`Creating secret ${slug} using '${logObject(spec)}'`);
             await logRetry(() => req.clients.core.createNamespacedSecret(spec.metadata.namespace, spec),
                 `create secret ${secretName} for ${slug}`);
             return spec;
         }
-        logger.info(`Secret ${secretName} exists, patching using '${stringifyObject(spec)}'`);
-        await logRetry(() => req.clients.core.patchNamespacedSecret(secret.metadata.name, spec.metadata.namespace, spec),
-            `patch secret ${secretName} for ${slug}`);
+        logger.info(`Secret ${secretName} exists, patching using '${logObject(spec)}'`);
+        await logRetry(() => req.clients.core.patchNamespacedSecret(secret.metadata.name, spec.metadata.namespace, spec,
+            undefined, undefined, undefined, undefined, patchHeaders()), `patch secret ${secretName} for ${slug}`);
         return spec;
     }));
+    return ss;
 }
 
 /**
@@ -74,7 +75,7 @@ export async function upsertSecrets(req: KubernetesResourceRequest): Promise<k8s
  * @param secret the unlabeled secret
  * @return the provided secret with appropriate labels
  */
-export async function secretTemplate(req: KubernetesApplication & KubernetesSdm, secret: DeepPartial<k8s.V1Secret>): Promise<k8s.V1Secret> {
+export async function secretTemplate(req: KubernetesApplication & KubernetesSdm, secret: k8s.V1Secret): Promise<k8s.V1Secret> {
     const labels = applicationLabels({ ...req, component: "secret" });
     const metadata = metadataTemplate({
         namespace: req.ns,
@@ -82,14 +83,13 @@ export async function secretTemplate(req: KubernetesApplication & KubernetesSdm,
     });
     const apiVersion = "v1";
     const kind = "Secret";
-    // avoid https://github.com/kubernetes-client/javascript/issues/52
-    const s: Partial<k8s.V1Secret> = {
+    const s: k8s.V1Secret = {
         type: "Opaque",
         metadata,
     };
     _.merge(s, secret, { apiVersion, kind });
     s.metadata.namespace = req.ns;
-    return s as k8s.V1Secret;
+    return s;
 }
 
 /**
@@ -120,12 +120,12 @@ export function encodeSecret(name: string, data: { [key: string]: string }): k8s
  * @param secret Kubernetes secret with base64 encoded data values
  * @return Kubernetes secret object with encrypted data values
  */
-export async function encryptSecret(secret: DeepPartial<k8s.V1Secret>, key: string): Promise<k8s.V1Secret> {
+export async function encryptSecret(secret: k8s.V1Secret, key: string): Promise<k8s.V1Secret> {
     const encrypted = handleDataStrings(_.cloneDeep(secret));
     for (const datum of Object.keys(encrypted.data)) {
         encrypted.data[datum] = await encrypt(encrypted.data[datum], key);
     }
-    return encrypted as k8s.V1Secret;
+    return encrypted;
 }
 
 /**
@@ -135,7 +135,7 @@ export async function encryptSecret(secret: DeepPartial<k8s.V1Secret>, key: stri
  * @param secret Kubernetes secret with stringData elements
  * @return Kubernetes secret with stringData elements encoded and moved to data
  */
-function handleDataStrings(secret: DeepPartial<k8s.V1Secret>): DeepPartial<k8s.V1Secret> {
+function handleDataStrings(secret: k8s.V1Secret): k8s.V1Secret {
     if (secret.stringData) {
         Object.keys(secret.stringData).forEach(key => secret.data[key] = Buffer.from(secret.stringData[key]).toString("base64"));
         delete secret.stringData;
@@ -150,10 +150,10 @@ function handleDataStrings(secret: DeepPartial<k8s.V1Secret>): DeepPartial<k8s.V
  * @param secret Kubernetes secret with encrypted data values
  * @return Kubernetes secret object with base64 encoded data values
  */
-export async function decryptSecret(secret: DeepPartial<k8s.V1Secret>, key: string): Promise<k8s.V1Secret> {
+export async function decryptSecret(secret: k8s.V1Secret, key: string): Promise<k8s.V1Secret> {
     const decrypted = _.cloneDeep(secret);
     for (const datum of Object.keys(secret.data)) {
         decrypted.data[datum] = await decrypt(secret.data[datum], key);
     }
-    return decrypted as k8s.V1Secret;
+    return decrypted;
 }

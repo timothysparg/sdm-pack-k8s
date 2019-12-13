@@ -16,12 +16,11 @@
 
 import * as k8s from "@kubernetes/client-node";
 import * as assert from "power-assert";
-import { DeepPartial } from "ts-essentials";
 import { KubernetesDelete } from "../../lib/kubernetes/request";
 import {
     appObject,
     k8sObject,
-    stringifyObject,
+    logObject,
 } from "../../lib/kubernetes/resource";
 
 describe("kubernetes/resource", () => {
@@ -180,7 +179,7 @@ describe("kubernetes/resource", () => {
     describe("k8sObject", () => {
 
         it("should return a minimal object from a service account", () => {
-            const d: DeepPartial<k8s.V1ServiceAccount> = {
+            const d: k8s.V1ServiceAccount = {
                 apiVersion: "v1",
                 kind: "ServiceAccount",
                 metadata: {
@@ -197,7 +196,7 @@ describe("kubernetes/resource", () => {
         });
 
         it("should return a minimal object from a deployment", () => {
-            const d: DeepPartial<k8s.V1Deployment> = {
+            const d: k8s.V1Deployment = {
                 apiVersion: "apps/v1",
                 kind: "Deployment",
                 metadata: {
@@ -209,11 +208,13 @@ describe("kubernetes/resource", () => {
                     namespace: "rihanna",
                 },
                 spec: {
+                    selector: {},
                     template: {
                         spec: {
                             containers: [
                                 {
                                     image: "umbrella:4.36",
+                                    name: "umbrella",
                                 },
                             ],
                         },
@@ -240,8 +241,26 @@ describe("kubernetes/resource", () => {
 
     describe("stringifyObject", () => {
 
-        it("should stringify a deployment", () => {
-            const d: DeepPartial<k8s.V1Deployment> = {
+        it("should stringify a service", () => {
+            const d: k8s.V1Service = {
+                apiVersion: "v1",
+                kind: "Service",
+                metadata: {
+                    name: "good-girl-gone-bad",
+                    namespace: "rihanna",
+                },
+                spec: {
+                    ports: [{ port: 8080 }],
+                },
+            };
+            const s = logObject(d);
+            // tslint:disable-next-line:max-line-length
+            const e = `{"apiVersion":"v1","kind":"Service","metadata":{"name":"good-girl-gone-bad","namespace":"rihanna"},"spec":{"ports":[{"port":8080}]}}`;
+            assert(s === e);
+        });
+
+        it("should stringify and truncate a deployment", () => {
+            const d: k8s.V1Deployment = {
                 apiVersion: "apps/v1",
                 kind: "Deployment",
                 metadata: {
@@ -253,25 +272,27 @@ describe("kubernetes/resource", () => {
                     namespace: "rihanna",
                 },
                 spec: {
+                    selector: {},
                     template: {
                         spec: {
                             containers: [
                                 {
                                     image: "umbrella:4.36",
+                                    name: "umbrella",
                                 },
                             ],
                         },
                     },
                 },
             };
-            const s = stringifyObject(d);
+            const s = logObject(d);
             // tslint:disable-next-line:max-line-length
-            const e = `{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"labels":{"app.kubernetes.io/name":"good-girl-gone-bad","atomist.com/workspaceId":"AR14NN4"},"name":"good-girl-gone-bad","namespace":"rihanna"},"spec":{"template":{"spec":{"containers":[{"image":"umbrella:4.36"}]}}}}`;
+            const e = `{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"labels":{"app.kubernetes.io/name":"good-girl-gone-bad","atomist.com/workspaceId":"AR14NN4"},"name":"good-girl-gone-bad","namespace":"rihann...}`;
             assert(s === e);
         });
 
         it("should remove data values from a secret", () => {
-            const d: DeepPartial<k8s.V1Secret> = {
+            const d: k8s.V1Secret = {
                 apiVersion: "v1",
                 data: {
                     One: "VW1icmVsbGEgKGZlYXQuIEpheS1aKQ==",
@@ -288,9 +309,9 @@ describe("kubernetes/resource", () => {
                     namespace: "rihanna",
                 },
             };
-            const s = stringifyObject(d);
+            const s = logObject(d);
             // tslint:disable-next-line:max-line-length
-            const e = `{"apiVersion":"v1","data":{"One":"V******************************=","Two":"U******************=","Seven":"********"},"kind":"Secret","metadata":{"labels":{"app.kubernetes.io/name":"good-girl-gone-bad","atomist.com/workspaceId":"AR14NN4"},"name":"good-girl-gone-bad","namespace":"rihanna"}}`;
+            const e = `{"apiVersion":"v1","data":{"One":"V******************************=","Two":"U******************=","Seven":"********"},"kind":"Secret","metadata":{"labels":{"app.kubernetes.io/name":"good-girl-gone-...}`;
             assert(s === e);
         });
 

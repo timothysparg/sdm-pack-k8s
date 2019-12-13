@@ -16,17 +16,17 @@
 
 import { logger } from "@atomist/automation-client";
 import * as k8s from "@kubernetes/client-node";
-import { DeepPartial } from "ts-essentials";
 import { errMsg } from "../support/error";
 import { logRetry } from "../support/retry";
 import { applicationLabels } from "./labels";
 import { metadataTemplate } from "./metadata";
+import { patchHeaders } from "./patch";
 import {
     KubernetesApplication,
     KubernetesResourceRequest,
     KubernetesSdm,
 } from "./request";
-import { stringifyObject } from "./resource";
+import { logObject } from "./resource";
 
 export const defaultNamespace = "default";
 
@@ -44,13 +44,14 @@ export async function upsertNamespace(req: KubernetesResourceRequest): Promise<k
         logger.debug(`Namespace ${slug} exists`);
     } catch (e) {
         logger.debug(`Failed to get namespace ${slug}, creating: ${errMsg(e)}`);
-        logger.info(`Creating namespace ${slug} using '${stringifyObject(spec)}'`);
+        logger.info(`Creating namespace ${slug} using '${logObject(spec)}'`);
         await logRetry(() => req.clients.core.createNamespace(spec), `create namespace ${slug}`);
         return spec;
     }
-    logger.info(`Namespace ${slug} exists, patching using '${stringifyObject(spec)}'`);
+    logger.info(`Namespace ${slug} exists, patching using '${logObject(spec)}'`);
     try {
-        await logRetry(() => req.clients.core.patchNamespace(spec.metadata.name, spec), `patch namespace ${slug}`);
+        await logRetry(() => req.clients.core.patchNamespace(spec.metadata.name, spec,
+            undefined, undefined, undefined, undefined, patchHeaders()), `patch namespace ${slug}`);
     } catch (e) {
         logger.warn(`Failed to patch existing namespace ${slug}, ignoring: ${errMsg(e)}`);
     }
@@ -68,11 +69,10 @@ export async function namespaceTemplate(req: KubernetesApplication & KubernetesS
     const retain = ["atomist.com/workspaceId", "app.kubernetes.io/managed-by"];
     const labels = Object.assign({}, ...Object.keys(allLabels).filter(k => retain.includes(k)).map(k => ({ [k]: allLabels[k] })));
     const metadata = metadataTemplate({ labels, name: req.ns });
-    // avoid https://github.com/kubernetes-client/javascript/issues/52
-    const ns: DeepPartial<k8s.V1Namespace> = {
+    const ns: k8s.V1Namespace = {
         apiVersion: "v1",
         kind: "Namespace",
         metadata,
     };
-    return ns as k8s.V1Namespace;
+    return ns;
 }

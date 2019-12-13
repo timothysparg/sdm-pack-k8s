@@ -21,7 +21,6 @@ import {
 import * as k8s from "@kubernetes/client-node";
 import * as stringify from "json-stringify-safe";
 import * as _ from "lodash";
-import { DeepPartial } from "ts-essentials";
 import { errMsg } from "../support/error";
 import { logRetry } from "../support/retry";
 import {
@@ -29,13 +28,14 @@ import {
     matchLabels,
 } from "./labels";
 import { metadataTemplate } from "./metadata";
+import { patchHeaders } from "./patch";
 import {
     appName,
     KubernetesApplication,
     KubernetesResourceRequest,
     KubernetesSdm,
 } from "./request";
-import { stringifyObject } from "./resource";
+import { logObject } from "./resource";
 
 /**
  * Create or update a deployment for a Kubernetes application.  Any
@@ -52,14 +52,14 @@ export async function upsertDeployment(req: KubernetesResourceRequest): Promise<
         await req.clients.apps.readNamespacedDeployment(spec.metadata.name, spec.metadata.namespace);
     } catch (e) {
         logger.debug(`Failed to read deployment ${slug}, creating: ${errMsg(e)}`);
-        logger.info(`Creating deployment ${slug} using '${stringifyObject(spec)}'`);
+        logger.info(`Creating deployment ${slug} using '${logObject(spec)}'`);
         await logRetry(() => req.clients.apps.createNamespacedDeployment(spec.metadata.namespace, spec),
             `create deployment ${slug}`);
         return spec;
     }
-    logger.info(`Updating deployment ${slug} using '${stringifyObject(spec)}'`);
-    await logRetry(() => req.clients.apps.patchNamespacedDeployment(spec.metadata.name, spec.metadata.namespace, spec),
-        `patch deployment ${slug}`);
+    logger.info(`Updating deployment ${slug} using '${logObject(spec)}'`);
+    await logRetry(() => req.clients.apps.patchNamespacedDeployment(spec.metadata.name, spec.metadata.namespace, spec,
+        undefined, undefined, undefined, undefined, patchHeaders()), `patch deployment ${slug}`);
     return spec;
 }
 
@@ -98,8 +98,7 @@ export async function deploymentTemplate(req: KubernetesApplication & Kubernetes
     } as any;
     const apiVersion = "apps/v1";
     const kind = "Deployment";
-    // avoid https://github.com/kubernetes-client/javascript/issues/52
-    const d: DeepPartial<k8s.V1Deployment> = {
+    const d: k8s.V1Deployment = {
         apiVersion,
         kind,
         metadata,
@@ -163,5 +162,5 @@ export async function deploymentTemplate(req: KubernetesApplication & Kubernetes
         _.merge(d, req.deploymentSpec, { apiVersion, kind });
         d.metadata.namespace = req.ns;
     }
-    return d as k8s.V1Deployment;
+    return d;
 }

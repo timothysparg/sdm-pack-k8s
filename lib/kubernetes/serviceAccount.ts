@@ -17,18 +17,18 @@
 import { logger } from "@atomist/automation-client";
 import * as k8s from "@kubernetes/client-node";
 import * as _ from "lodash";
-import { DeepPartial } from "ts-essentials";
 import { errMsg } from "../support/error";
 import { logRetry } from "../support/retry";
 import { applicationLabels } from "./labels";
 import { metadataTemplate } from "./metadata";
+import { patchHeaders } from "./patch";
 import {
     appName,
     KubernetesApplication,
     KubernetesResourceRequest,
     KubernetesSdm,
 } from "./request";
-import { stringifyObject } from "./resource";
+import { logObject } from "./resource";
 
 /**
  * Create or patch service account.
@@ -43,14 +43,14 @@ export async function upsertServiceAccount(req: KubernetesResourceRequest): Prom
         await req.clients.core.readNamespacedServiceAccount(spec.metadata.name, spec.metadata.namespace);
     } catch (e) {
         logger.debug(`Failed to read service account ${slug}, creating: ${errMsg(e)}`);
-        logger.info(`Creating service account ${slug} using '${stringifyObject(spec)}'`);
+        logger.info(`Creating service account ${slug} using '${logObject(spec)}'`);
         await logRetry(() => req.clients.core.createNamespacedServiceAccount(spec.metadata.namespace, spec),
             `create service account ${slug}`);
         return spec;
     }
-    logger.info(`Service account ${slug} exists, patching using '${stringifyObject(spec)}'`);
-    await logRetry(() => req.clients.core.patchNamespacedServiceAccount(spec.metadata.name, spec.metadata.namespace, spec),
-        `patch service account ${slug}`);
+    logger.info(`Service account ${slug} exists, patching using '${logObject(spec)}'`);
+    await logRetry(() => req.clients.core.patchNamespacedServiceAccount(spec.metadata.name, spec.metadata.namespace, spec,
+        undefined, undefined, undefined, undefined, patchHeaders()), `patch service account ${slug}`);
     return spec;
 }
 
@@ -77,8 +77,7 @@ export async function serviceAccountTemplate(req: KubernetesApplication & Kubern
     });
     const apiVersion = "v1";
     const kind = "ServiceAccount";
-    // avoid https://github.com/kubernetes-client/javascript/issues/52
-    const sa: DeepPartial<k8s.V1ServiceAccount> = {
+    const sa: k8s.V1ServiceAccount = {
         apiVersion,
         kind,
         metadata,
@@ -87,5 +86,5 @@ export async function serviceAccountTemplate(req: KubernetesApplication & Kubern
         _.merge(sa, req.serviceAccountSpec, { apiVersion, kind });
         sa.metadata.namespace = req.ns;
     }
-    return sa as k8s.V1ServiceAccount;
+    return sa;
 }

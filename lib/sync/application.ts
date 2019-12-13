@@ -30,12 +30,12 @@ import {
     ProjectLoader,
     ProjectLoadingParameters,
 } from "@atomist/sdm";
+import * as k8s from "@kubernetes/client-node";
 import {
     KubernetesSyncOptions,
     validSyncOptions,
 } from "../config";
 import { parseKubernetesSpecFile } from "../deploy/spec";
-import { K8sObject } from "../kubernetes/api";
 import {
     appName,
     isKubernetesApplication,
@@ -61,7 +61,7 @@ export type SyncAction = "upsert" | "delete";
  * @param resources Kubernetes resource objects to synchronize
  * @param action Action performed, "upsert" or "delete"
  */
-export async function syncApplication(app: KubernetesDelete, resources: K8sObject[], action: SyncAction = "upsert"): Promise<void> {
+export async function syncApplication(app: KubernetesDelete, resources: k8s.KubernetesObject[], action: SyncAction = "upsert"): Promise<void> {
     const slug = appName(app);
     const syncOpts = configurationValue<Partial<KubernetesSyncOptions>>("sdm.k8s.options.sync", {});
     if (!validSyncOptions(syncOpts)) {
@@ -90,7 +90,7 @@ export async function syncApplication(app: KubernetesDelete, resources: K8sObjec
 
 export interface ProjectFileSpec {
     file: ProjectFile;
-    spec: K8sObject;
+    spec: k8s.KubernetesObject;
 }
 
 /**
@@ -111,7 +111,7 @@ export interface ProjectFileSpec {
  */
 export function syncResources(
     app: KubernetesDelete,
-    resources: K8sObject[],
+    resources: k8s.KubernetesObject[],
     action: SyncAction,
     opts: KubernetesSyncOptions,
 ): (p: GitProject) => Promise<void> {
@@ -171,7 +171,7 @@ export function syncResources(
  * @param p Sync repo project
  * @param fs File and spec object that matches resource, may be undefined
  */
-async function resourceUpserted(resource: K8sObject, p: Project, fs: ProjectFileSpec, opts: KubernetesSyncOptions): Promise<void> {
+async function resourceUpserted(resource: k8s.KubernetesObject, p: Project, fs: ProjectFileSpec, opts: KubernetesSyncOptions): Promise<void> {
     let format: KubernetesSyncOptions["specFormat"] = "yaml";
     if (fs && fs.file) {
         format = (/\.ya?ml$/.test(fs.file.path)) ? "yaml" : "json";
@@ -192,16 +192,36 @@ async function resourceUpserted(resource: K8sObject, p: Project, fs: ProjectFile
 }
 
 /**
- * Persist the deletion of a resource to the sync repo project.
+ * Safely persist the deletion of a resource to the sync repo project.
+ * If `fs` is `undefined`, do nothing.
  *
  * @param resource Kubernetes resource that was upserted
  * @param p Sync repo project
- * @param fs File and spec object that matches resource, may be undefined
+ * @param fs File and spec object that matches resource, may be `undefined`
  */
-async function resourceDeleted(resource: K8sObject, p: Project, fs: ProjectFileSpec): Promise<void> {
+async function resourceDeleted(resource: k8s.KubernetesObject, p: Project, fs: ProjectFileSpec): Promise<void> {
     if (fs) {
         await p.deleteFile(fs.file.path);
     }
+}
+
+/**
+ * Determine if two Kubernetes resource specifications represent the
+ * same object.  When determining if they are the same, only the kind,
+ * name, and namespace, which may be `undefined`, must match.  The
+ * apiVersion is not considered when matching because the same
+ * resource can appear under different API versions.  Other object
+ * properties are not considered.
+ *
+ * @param a First Kubernetes object spec to match
+ * @param b Second Kubernetes object spec to match
+ * @return `true` if specs match, `false` otherwise
+ */
+export function sameObject(a: k8s.KubernetesObject, b: k8s.KubernetesObject): boolean {
+    return a && b && a.metadata && b.metadata &&
+        a.kind === b.kind &&
+        a.metadata.name === b.metadata.name &&
+        a.metadata.namespace === b.metadata.namespace;
 }
 
 /**
@@ -215,10 +235,8 @@ async function resourceDeleted(resource: K8sObject, p: Project, fs: ProjectFileS
  * @param fileSpecs Array of spec and file objects to search
  * @return First file and spec object to match spec or `undefined` if no match is found
  */
-export function matchSpec(spec: K8sObject, fileSpecs: ProjectFileSpec[]): ProjectFileSpec | undefined {
-    return fileSpecs.find(fs => spec.kind === fs.spec.kind &&
-        spec.metadata.name === fs.spec.metadata.name &&
-        spec.metadata.namespace === fs.spec.metadata.namespace);
+export function matchSpec(spec: k8s.KubernetesObject, fileSpecs: ProjectFileSpec[]): ProjectFileSpec | undefined {
+    return fileSpecs.find(fs => sameObject(spec, fs.spec));
 }
 
 /**
@@ -230,7 +248,7 @@ export function matchSpec(spec: K8sObject, fileSpecs: ProjectFileSpec[]): Projec
  * @param p Kubernetes spec project
  * @return Unique spec file name that sorts properly
  */
-export async function uniqueSpecFile(resource: K8sObject, p: Project, format: KubernetesSyncOptions["specFormat"]): Promise<string> {
+export async function uniqueSpecFile(resource: k8s.KubernetesObject, p: Project, format: KubernetesSyncOptions["specFormat"]): Promise<string> {
     const specRoot = kubernetesSpecFileBasename(resource);
     const specExt = `.${format}`;
     let specPath = specRoot + specExt;
