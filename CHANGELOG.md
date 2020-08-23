@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## [Unreleased](https://github.com/atomist/sdm-pack-k8s/compare/1.10.2...HEAD)
+## [Unreleased](https://github.com/atomist/sdm-pack-k8s/compare/1.11.0...HEAD)
+
+## [1.11.0](https://github.com/atomist/sdm-pack-k8s/compare/1.10.2...1.11.0) - 2020-03-03
 
 ### Added
 
@@ -14,6 +16,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 -   Support disabling sync mode for Kubernetes resources. [#83](https://github.com/atomist/sdm-pack-k8s/issues/83)
 -   Provide Kubernetes deploy goal fulfiller. [69032d4](https://github.com/atomist/sdm-pack-k8s/commit/69032d47259edc6473bf8b10efcd40472c03fa5d)
 -   Support no-op Kubernetes client. [#52](https://github.com/atomist/sdm-pack-k8s/issues/52)
+-   Allow setting of patching strategy. [#87](https://github.com/atomist/sdm-pack-k8s/issues/87)
 
 ### Changed
 

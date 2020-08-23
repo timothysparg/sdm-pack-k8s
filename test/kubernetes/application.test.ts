@@ -1,5 +1,5 @@
 /*
- * Copyright © 2019 Atomist, Inc.
+ * Copyright © 2020 Atomist, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,10 +52,10 @@ describe("kubernetes/application", () => {
 
     });
 
-    describe.skip("upsertApplication & deleteApplication", function(): void {
+    describe("upsertApplication & deleteApplication", function(): void {
 
         // tslint:disable-next-line:no-invalid-this
-        this.timeout(5000);
+        this.timeout(10000);
 
         let defaultRetries: number;
         before(async function(): Promise<void> {
